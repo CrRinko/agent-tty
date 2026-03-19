@@ -4,15 +4,20 @@ node_modules/
 # Build output
 dist/
 out/
+*.tsbuildinfo
 
 # Coverage & test artifacts
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
+.eslintcache
 
 # Environment
 .env
 .env.*
 !.env.example
+.mise.local.toml
 
 # OS
 .DS_Store
@@ -37,3 +42,4 @@ pids/
 # Temporary files
 tmp/
 .tmp/
+.cache/

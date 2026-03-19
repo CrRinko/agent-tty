@@ -1,3 +1,71 @@
 [tools]
 node = "24"
 python = "3"
+
+[tasks.bootstrap]
+description = "Install deps and Chromium"
+run = "npm install && npx playwright install chromium"
+
+[tasks.clean]
+description = "Clean artifacts"
+run = "npm run clean"
+
+[tasks.build]
+description = "Build"
+run = "npm run build"
+sources = ["src/**/*.ts", "tsconfig.json", "tsconfig.build.json", "package.json"]
+outputs = ["dist/**/*.js", "dist/**/*.d.ts", "dist/**/*.map"]
+
+[tasks.typecheck]
+description = "Typecheck"
+run = "npm run typecheck"
+sources = [
+  "src/**/*.ts",
+  "test/**/*.ts",
+  "tsconfig.json",
+  "tsconfig.build.json",
+  "vitest.config.ts",
+  "package.json",
+]
+
+[tasks.lint]
+description = "Lint"
+run = "npm run lint"
+sources = [
+  "src/**/*.ts",
+  "test/**/*.ts",
+  "eslint.config.mjs",
+  "vitest.config.ts",
+  "package.json",
+]
+
+[tasks.format]
+description = "Format"
+run = "npm run format"
+
+[tasks.format-check]
+description = "Check format"
+run = "npm run format:check"
+sources = [
+  "src/**/*.ts",
+  "test/**/*.ts",
+  "*.json",
+  "*.mjs",
+  "*.toml",
+  "*.md",
+  "design/**/*.md",
+]
+
+[tasks.test]
+description = "Test"
+run = "npm run test"
+sources = [
+  "src/**/*.ts",
+  "test/**/*.ts",
+  "vitest.config.ts",
+  "package.json",
+]
+
+[tasks.ci]
+description = "Run CI checks"
+run = "npm run verify"
