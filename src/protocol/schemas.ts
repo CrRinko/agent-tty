@@ -69,6 +69,15 @@ export const ResizeEventPayloadSchema = z
   .strict();
 export type ResizeEventPayload = z.infer<typeof ResizeEventPayloadSchema>;
 
+// Marker labels may be empty strings per the asciicast marker spec.
+// This intentionally differs from input validation patterns that use .min(1).
+export const MarkerEventPayloadSchema = z
+  .object({
+    label: z.string(),
+  })
+  .strict();
+export type MarkerEventPayload = z.infer<typeof MarkerEventPayloadSchema>;
+
 export const SignalEventPayloadSchema = z
   .object({
     signal: NonEmptyStringSchema,
@@ -92,6 +101,7 @@ export const EventTypeSchema = z.enum([
   'resize',
   'signal',
   'exit',
+  'marker',
 ]);
 export type EventType = z.infer<typeof EventTypeSchema>;
 
@@ -140,6 +150,14 @@ export const ResizeEventRecordSchema = z
   })
   .strict();
 
+export const MarkerEventRecordSchema = z
+  .object({
+    ...EventRecordBaseShape,
+    type: z.literal('marker'),
+    payload: MarkerEventPayloadSchema,
+  })
+  .strict();
+
 export const SignalEventRecordSchema = z
   .object({
     ...EventRecordBaseShape,
@@ -164,6 +182,7 @@ export const EventRecordSchema = z.discriminatedUnion('type', [
   ResizeEventRecordSchema,
   SignalEventRecordSchema,
   ExitEventRecordSchema,
+  MarkerEventRecordSchema,
 ]);
 export type EventRecord = z.infer<typeof EventRecordSchema>;
 
@@ -286,4 +305,18 @@ export const WaitForRenderResultSchema = z
     capturedAtSeq: NonNegativeIntSchema,
   })
   .strict();
+export const RecordExportResultSchema = z
+  .object({
+    sessionId: NonEmptyStringSchema,
+    format: z.enum(['asciicast', 'webm']),
+    artifactPath: NonEmptyStringSchema,
+    bytes: PositiveIntSchema,
+    sha256: NonEmptyStringSchema,
+    capturedAtSeq: NonNegativeIntSchema,
+    durationMs: NonNegativeIntSchema.optional(),
+    metadata: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+export type RecordExportResult = z.infer<typeof RecordExportResultSchema>;
+
 export type WaitForRenderResult = z.infer<typeof WaitForRenderResultSchema>;

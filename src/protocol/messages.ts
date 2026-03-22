@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { RecordExportResult as RecordExportResultType } from './schemas.js';
+
 import {
   ScreenshotParamsSchema,
   ScreenshotResultSchema,
@@ -12,6 +14,7 @@ import {
 } from './schemas.js';
 
 export {
+  RecordExportResultSchema,
   ScreenshotParamsSchema,
   ScreenshotResultSchema,
   SnapshotParamsSchema,
@@ -84,6 +87,8 @@ export type ScreenshotParams = z.infer<typeof ScreenshotParamsSchema>;
 
 export type ScreenshotResult = z.infer<typeof ScreenshotResultSchema>;
 
+export type RecordExportResult = RecordExportResultType;
+
 export const TypeParamsSchema = z
   .object({
     text: z.string().min(1),
@@ -103,6 +108,20 @@ export type PasteParams = z.infer<typeof PasteParamsSchema>;
 
 export const PasteResultSchema = EmptyObjectSchema;
 export type PasteResult = z.infer<typeof PasteResultSchema>;
+
+export const MarkParamsSchema = z
+  .object({
+    label: z.string(),
+  })
+  .strict();
+export type MarkParams = z.infer<typeof MarkParamsSchema>;
+
+export const MarkResultSchema = z
+  .object({
+    seq: z.number().int().nonnegative(),
+  })
+  .strict();
+export type MarkResult = z.infer<typeof MarkResultSchema>;
 
 export const SendKeysParamsSchema = z
   .object({
@@ -171,6 +190,7 @@ const RPC_METHODS = [
   'screenshot',
   'type',
   'paste',
+  'mark',
   'sendKeys',
   'resize',
   'signal',
@@ -202,6 +222,10 @@ export const RpcMethodSchemas = {
   paste: {
     params: PasteParamsSchema,
     result: PasteResultSchema,
+  },
+  mark: {
+    params: MarkParamsSchema,
+    result: MarkResultSchema,
   },
   sendKeys: {
     params: SendKeysParamsSchema,

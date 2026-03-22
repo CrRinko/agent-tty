@@ -16,7 +16,11 @@ import {
 } from 'playwright';
 
 import { invariant, assertString, unreachable } from '../../util/assert.js';
-import type { RendererBackend } from '../backend.js';
+import type {
+  AcceleratedTimingOptions,
+  VideoCapableRendererBackend,
+  VideoRecordingOptions,
+} from '../backend.js';
 import type {
   RenderProfileConfig,
   ReplayInput,
@@ -648,17 +652,19 @@ function validateHarnessSnapshot(snapshot: unknown): GhosttyHarnessSnapshot {
   };
 }
 
-export class GhosttyWebBackend implements RendererBackend {
+export class GhosttyWebBackend implements VideoCapableRendererBackend {
   public isBooted = false;
 
   private readonly profile: RenderProfileConfig;
   private readonly sessionId: string;
+  private readonly videoOptions: Readonly<VideoRecordingOptions> | null;
   private bootPromise: Promise<void> | null = null;
   private browser: Browser | null = null;
   private browserContext: BrowserContext | null = null;
   private currentCols: number | null = null;
   private currentRows: number | null = null;
   private disposePromise: Promise<void> | null = null;
+  private expectedPageClosure = false;
   private failureReason: Error | null = null;
   private initialReplayCols: number | null = null;
   private initialReplayRows: number | null = null;
@@ -667,7 +673,11 @@ export class GhosttyWebBackend implements RendererBackend {
   private server: Server | null = null;
   private serverOrigin: string | null = null;
 
-  public constructor(sessionId: string, profile: RenderProfileConfig) {
+  public constructor(
+    sessionId: string,
+    profile: RenderProfileConfig,
+    videoOptions?: VideoRecordingOptions,
+  ) {
     invariant(sessionId.length > 0, 'sessionId must be a non-empty string');
     invariant(
       profile.name.length > 0,
@@ -690,8 +700,39 @@ export class GhosttyWebBackend implements RendererBackend {
       'profile.foregroundColor must be a hex color',
     );
 
+    const normalizedVideoOptions =
+      videoOptions === undefined
+        ? null
+        : (() => {
+            invariant(
+              videoOptions.outputDir.length > 0,
+              'videoOptions.outputDir must be a non-empty string',
+            );
+            invariant(
+              isAbsolute(videoOptions.outputDir),
+              'videoOptions.outputDir must be an absolute path',
+            );
+
+            assertPositiveInteger(
+              videoOptions.size.width,
+              'videoOptions.size.width must be a positive integer',
+            );
+            assertPositiveInteger(
+              videoOptions.size.height,
+              'videoOptions.size.height must be a positive integer',
+            );
+            return Object.freeze({
+              outputDir: videoOptions.outputDir,
+              size: Object.freeze({
+                width: videoOptions.size.width,
+                height: videoOptions.size.height,
+              }),
+            });
+          })();
+
     this.sessionId = sessionId;
     this.profile = Object.freeze({ ...profile });
+    this.videoOptions = normalizedVideoOptions;
   }
 
   public async boot(): Promise<void> {
@@ -807,6 +848,10 @@ export class GhosttyWebBackend implements RendererBackend {
           this.currentRows = event.payload.rows;
           break;
         }
+        case 'marker': {
+          await flushOutputBatch();
+          break;
+        }
         case 'input_text':
         case 'input_paste':
         case 'input_keys':
@@ -824,6 +869,220 @@ export class GhosttyWebBackend implements RendererBackend {
     }
 
     await flushOutputBatch();
+
+    if (highestProcessedSeq < 0) {
+      highestProcessedSeq = input.targetSeq;
+    }
+
+    this.lastAppliedSeq = highestProcessedSeq;
+
+    const snapshot = await this.readHarnessSnapshot(page);
+    this.currentCols = snapshot.cols;
+    this.currentRows = snapshot.rows;
+
+    return {
+      lastSeq: this.lastAppliedSeq,
+      cols: snapshot.cols,
+      rows: snapshot.rows,
+      cursorRow: snapshot.cursorRow,
+      cursorCol: snapshot.cursorCol,
+    };
+  }
+
+  public async replayWithTiming(
+    input: ReplayInput,
+    options: AcceleratedTimingOptions,
+  ): Promise<ReplayState> {
+    const page = this.requireOperationalPage('replayWithTiming()');
+
+    invariant(
+      input.sessionId === this.sessionId,
+      `replay input session ${input.sessionId} does not match backend session ${this.sessionId}`,
+    );
+    assertPositiveInteger(
+      input.initialCols,
+      'replay input initialCols must be a positive integer',
+    );
+    assertPositiveInteger(
+      input.initialRows,
+      'replay input initialRows must be a positive integer',
+    );
+    assertNonNegativeInteger(
+      input.targetSeq,
+      'replay input targetSeq must be a non-negative integer',
+    );
+    invariant(
+      input.targetSeq >= this.lastAppliedSeq,
+      'stateful GhosttyWebBackend cannot rewind from seq ' +
+        String(this.lastAppliedSeq) +
+        ' to ' +
+        String(input.targetSeq),
+    );
+
+    const maxGapMs = options.maxGapMs;
+    const minFrameHoldMs = options.minFrameHoldMs;
+    const finalFrameHoldMs = options.finalFrameHoldMs;
+    assertNonNegativeInteger(
+      maxGapMs,
+      'replayWithTiming maxGapMs must be a non-negative integer',
+    );
+    assertNonNegativeInteger(
+      minFrameHoldMs,
+      'replayWithTiming minFrameHoldMs must be a non-negative integer',
+    );
+    assertNonNegativeInteger(
+      finalFrameHoldMs,
+      'replayWithTiming finalFrameHoldMs must be a non-negative integer',
+    );
+
+    const waitForDelay = async (delayMs: number): Promise<void> => {
+      assertNonNegativeInteger(
+        delayMs,
+        'replayWithTiming delayMs must be a non-negative integer',
+      );
+      if (delayMs === 0) {
+        return;
+      }
+
+      await new Promise<void>((resolvePromise) => {
+        setTimeout(resolvePromise, delayMs);
+      });
+    };
+    const parseEventTimestampMs = (
+      eventTs: string,
+      eventSeq: number,
+    ): number => {
+      assertString(
+        eventTs,
+        `replay event ${String(eventSeq)} ts must be an ISO timestamp string`,
+      );
+      const timestampMs = Date.parse(eventTs);
+      invariant(
+        Number.isFinite(timestampMs),
+        `replay event ${String(eventSeq)} ts must be a valid ISO timestamp`,
+      );
+      return timestampMs;
+    };
+
+    if (this.initialReplayCols === null || this.initialReplayRows === null) {
+      await this.resizeBridge(page, input.initialCols, input.initialRows);
+      this.initialReplayCols = input.initialCols;
+      this.initialReplayRows = input.initialRows;
+      this.currentCols = input.initialCols;
+      this.currentRows = input.initialRows;
+      await waitForDelay(minFrameHoldMs);
+    } else {
+      invariant(
+        this.initialReplayCols === input.initialCols &&
+          this.initialReplayRows === input.initialRows,
+        'replay input initial dimensions changed after the first replay',
+      );
+    }
+
+    let outputEventCount = 0;
+    let previousEventSeq = -1;
+    let previousProcessedEventTimestampMs: number | null = null;
+    let processedEventCount = 0;
+    let resizeEventCount = 0;
+    let highestProcessedSeq = this.lastAppliedSeq;
+    let pendingOutputChunks: string[] = [];
+
+    const flushOutputBatch = async (): Promise<void> => {
+      if (pendingOutputChunks.length === 0) {
+        return;
+      }
+
+      await this.flushOutputBatch(page, pendingOutputChunks);
+      pendingOutputChunks = [];
+      await waitForDelay(minFrameHoldMs);
+    };
+
+    for (const event of input.events) {
+      assertNonNegativeInteger(
+        event.seq,
+        'replay event seq must be a non-negative integer',
+      );
+      invariant(
+        event.seq > previousEventSeq,
+        'replay events must be ordered by strictly increasing seq values',
+      );
+      previousEventSeq = event.seq;
+
+      if (event.seq <= this.lastAppliedSeq) {
+        continue;
+      }
+
+      if (event.seq > input.targetSeq) {
+        await flushOutputBatch();
+        break;
+      }
+
+      const eventTimestampMs = parseEventTimestampMs(event.ts, event.seq);
+      if (previousProcessedEventTimestampMs !== null) {
+        const interEventDelayMs =
+          eventTimestampMs - previousProcessedEventTimestampMs;
+        invariant(
+          interEventDelayMs >= 0,
+          'replay event timestamps must be ordered non-decreasingly',
+        );
+        await waitForDelay(Math.min(interEventDelayMs, maxGapMs));
+      }
+      previousProcessedEventTimestampMs = eventTimestampMs;
+
+      switch (event.type) {
+        case 'output': {
+          pendingOutputChunks.push(event.payload.data);
+          outputEventCount += 1;
+          break;
+        }
+        case 'resize': {
+          await flushOutputBatch();
+          assertPositiveInteger(
+            event.payload.cols,
+            'resize event cols must be a positive integer',
+          );
+          assertPositiveInteger(
+            event.payload.rows,
+            'resize event rows must be a positive integer',
+          );
+          await this.resizeBridge(page, event.payload.cols, event.payload.rows);
+          this.currentCols = event.payload.cols;
+          this.currentRows = event.payload.rows;
+          resizeEventCount += 1;
+          await waitForDelay(minFrameHoldMs);
+          break;
+        }
+        case 'marker': {
+          await flushOutputBatch();
+          break;
+        }
+        case 'input_text':
+        case 'input_paste':
+        case 'input_keys':
+        case 'signal':
+        case 'exit': {
+          await flushOutputBatch();
+          break;
+        }
+        default: {
+          unreachable(event, 'unsupported replay event type');
+        }
+      }
+
+      processedEventCount += 1;
+      highestProcessedSeq = event.seq;
+    }
+
+    await flushOutputBatch();
+
+    invariant(
+      outputEventCount + resizeEventCount <= processedEventCount,
+      'visual event count must not exceed processed event count',
+    );
+
+    if (highestProcessedSeq !== this.lastAppliedSeq) {
+      await waitForDelay(finalFrameHoldMs);
+    }
 
     if (highestProcessedSeq < 0) {
       highestProcessedSeq = input.targetSeq;
@@ -919,6 +1178,64 @@ export class GhosttyWebBackend implements RendererBackend {
     };
   }
 
+  public async finalizeVideo(outputPath: string): Promise<void> {
+    invariant(
+      this.videoOptions !== null,
+      'finalizeVideo() requires video recording to be enabled',
+    );
+    invariant(
+      outputPath.length > 0,
+      'video outputPath must be a non-empty string',
+    );
+    invariant(
+      isAbsolute(outputPath),
+      'finalizeVideo() outputPath must be an absolute path',
+    );
+    invariant(
+      outputPath.endsWith('.webm'),
+      'finalizeVideo() outputPath must end with .webm',
+    );
+
+    const outputDirectory = dirname(outputPath);
+    const outputDirectoryStat = await stat(outputDirectory);
+    invariant(
+      outputDirectoryStat.isDirectory(),
+      'finalizeVideo() output directory must exist',
+    );
+
+    const page = this.requireOperationalPage('finalizeVideo()');
+    const browserContext = this.browserContext;
+    invariant(
+      browserContext !== null,
+      'finalizeVideo() requires an active Playwright browser context',
+    );
+
+    const video = page.video();
+    invariant(
+      video !== null,
+      'finalizeVideo() requires an active Playwright video',
+    );
+
+    this.expectedPageClosure = true;
+    try {
+      await page.close();
+      await browserContext.close();
+    } finally {
+      this.expectedPageClosure = false;
+    }
+
+    await video.saveAs(outputPath);
+    this.page = null;
+    this.browserContext = null;
+
+    const outputFile = await stat(outputPath);
+    invariant(outputFile.isFile(), 'finalizeVideo() output must be a file');
+    assertPositiveInteger(
+      outputFile.size,
+      'finalizeVideo() output video must be non-empty',
+    );
+  }
+
   public async getVisibleText(): Promise<string> {
     const page = this.requireOperationalPage('getVisibleText()');
 
@@ -963,7 +1280,20 @@ export class GhosttyWebBackend implements RendererBackend {
 
       this.browserContext = await this.browser.newContext({
         deviceScaleFactor: 1,
-        viewport: DEFAULT_PAGE_VIEWPORT,
+        viewport: this.videoOptions?.size
+          ? {
+              width: this.videoOptions.size.width,
+              height: this.videoOptions.size.height,
+            }
+          : DEFAULT_PAGE_VIEWPORT,
+        ...(this.videoOptions
+          ? {
+              recordVideo: {
+                dir: this.videoOptions.outputDir,
+                size: this.videoOptions.size,
+              },
+            }
+          : {}),
       });
       await this.browserContext.route('**/*', async (route) => {
         if (this.isAllowedBrowserRequest(route.request().url())) {
@@ -976,7 +1306,7 @@ export class GhosttyWebBackend implements RendererBackend {
 
       this.page = await this.browserContext.newPage();
       this.page.on('close', () => {
-        if (this.disposePromise !== null) {
+        if (this.disposePromise !== null || this.expectedPageClosure) {
           return;
         }
 

@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DestroyParamsSchema,
   InspectResultSchema,
+  MarkParamsSchema,
+  MarkResultSchema,
   PasteParamsSchema,
+  RecordExportResultSchema,
   ResizeResultSchema,
   RpcMethodSchemas,
   RpcRequestSchema,
@@ -21,6 +24,7 @@ import {
 } from '../../../src/protocol/messages.js';
 import {
   EventRecordSchema,
+  MarkerEventRecordSchema,
   SessionRecordSchema,
 } from '../../../src/protocol/schemas.js';
 
@@ -89,6 +93,35 @@ describe('protocol schemas', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it('accepts marker event records, including empty labels', () => {
+    expect(
+      MarkerEventRecordSchema.parse({
+        seq: 0,
+        ts: '2026-03-19T12:00:02.000Z',
+        type: 'marker',
+        payload: { label: '' },
+      }),
+    ).toEqual({
+      seq: 0,
+      ts: '2026-03-19T12:00:02.000Z',
+      type: 'marker',
+      payload: { label: '' },
+    });
+    expect(
+      MarkerEventRecordSchema.parse({
+        seq: 1,
+        ts: '2026-03-19T12:00:03.000Z',
+        type: 'marker',
+        payload: { label: 'Step 1' },
+      }),
+    ).toEqual({
+      seq: 1,
+      ts: '2026-03-19T12:00:03.000Z',
+      type: 'marker',
+      payload: { label: 'Step 1' },
+    });
   });
 });
 
@@ -303,6 +336,72 @@ describe('RPC message schemas', () => {
     ).toBe(true);
   });
 
+  it('accepts valid record export results', () => {
+    expect(
+      RecordExportResultSchema.safeParse({
+        sessionId: 'session-01',
+        format: 'asciicast',
+        artifactPath: '/tmp/session-01/artifacts/recording-7-asciicast.cast',
+        bytes: 4096,
+        sha256: 'abc123',
+        capturedAtSeq: 7,
+        durationMs: 2500,
+        metadata: {
+          rows: 24,
+          cols: 80,
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      RecordExportResultSchema.safeParse({
+        sessionId: 'session-01',
+        format: 'webm',
+        artifactPath: '/tmp/session-01/artifacts/recording-7-webm.json',
+        bytes: 4096,
+        sha256: 'abc123',
+        capturedAtSeq: 7,
+        metadata: {},
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects invalid record export results', () => {
+    expect(
+      RecordExportResultSchema.safeParse({
+        sessionId: 'session-01',
+        format: 'asciicast',
+        artifactPath: '/tmp/session-01/artifacts/recording-7-asciicast.cast',
+        bytes: 0,
+        sha256: 'abc123',
+        capturedAtSeq: 7,
+        metadata: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      RecordExportResultSchema.safeParse({
+        sessionId: 'session-01',
+        format: 'asciicast-v2',
+        artifactPath: '/tmp/session-01/artifacts/recording-7-asciicast.cast',
+        bytes: 4096,
+        sha256: 'abc123',
+        capturedAtSeq: 7,
+        metadata: {},
+      }).success,
+    ).toBe(false);
+    expect(
+      RecordExportResultSchema.safeParse({
+        sessionId: 'session-01',
+        format: 'asciicast',
+        artifactPath: '/tmp/session-01/artifacts/recording-7-asciicast.cast',
+        bytes: 4096,
+        sha256: 'abc123',
+        capturedAtSeq: 7,
+        metadata: {},
+        extra: true,
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects empty key arrays for sendKeys', () => {
     const result = SendKeysParamsSchema.safeParse({
       keys: [],
@@ -317,6 +416,11 @@ describe('RPC message schemas', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it('accepts mark params with empty labels and mark results with seq values', () => {
+    expect(MarkParamsSchema.parse({ label: '' })).toEqual({ label: '' });
+    expect(MarkResultSchema.parse({ seq: 42 })).toEqual({ seq: 42 });
   });
 
   it('rejects empty type text', () => {
@@ -380,6 +484,7 @@ describe('RPC message schemas', () => {
       'screenshot',
       'type',
       'paste',
+      'mark',
       'sendKeys',
       'resize',
       'signal',

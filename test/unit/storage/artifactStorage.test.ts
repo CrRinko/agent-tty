@@ -10,14 +10,17 @@ import type {
 } from '../../../src/storage/artifactManifest.js';
 import {
   appendArtifact,
+  ArtifactEntrySchema,
   readArtifactManifest,
   writeArtifactManifest,
 } from '../../../src/storage/artifactManifest.js';
 import {
   artifactPath,
   ensureArtifactsDir,
+  recordingFilename,
   screenshotFilename,
   snapshotFilename,
+  videoFilename,
 } from '../../../src/storage/artifactPaths.js';
 
 const temporaryDirectories: string[] = [];
@@ -62,9 +65,13 @@ describe('artifact paths', () => {
     const sessionDir = await createSessionDir();
     const screenshot = screenshotFilename(7, 'reference dark / baseline');
     const snapshot = snapshotFilename(7, 'structured');
+    const recording = recordingFilename(7, 'asciicast');
+    const video = videoFilename(7, 'reference dark / baseline');
 
     expect(screenshot).toBe('screenshot-7-reference-dark-baseline.png');
     expect(snapshot).toBe('snapshot-7-structured.json');
+    expect(recording).toBe('recording-7-asciicast.cast');
+    expect(video).toBe('video-7-reference-dark-baseline.mp4');
     expect(artifactPath(sessionDir, screenshot)).toBe(
       join(sessionDir, 'artifacts', screenshot),
     );
@@ -75,11 +82,27 @@ describe('artifact paths', () => {
     await expect(access(artifactsDir)).resolves.toBeUndefined();
   });
 
+  it('generates recording filenames for webm format', () => {
+    expect(recordingFilename(7, 'webm')).toBe('recording-7-webm.webm');
+  });
+
+  it('asserts on unsupported recording formats', () => {
+    expect(() => recordingFilename(7, 'trace')).toThrow(
+      /unsupported recording format: trace/u,
+    );
+  });
+
   it('asserts on invalid helper inputs', () => {
     expect(() => screenshotFilename(-1, 'reference-dark')).toThrow(
       /seq must be a non-negative integer/u,
     );
     expect(() => screenshotFilename(0, '')).toThrow(
+      /profileName must be a non-empty string/u,
+    );
+    expect(() => recordingFilename(0, '')).toThrow(
+      /format must be a non-empty string/u,
+    );
+    expect(() => videoFilename(0, '')).toThrow(
       /profileName must be a non-empty string/u,
     );
     expect(() => artifactPath('relative/session', 'capture.png')).toThrow(
@@ -88,6 +111,50 @@ describe('artifact paths', () => {
     expect(() => artifactPath('/tmp/session-01', 'nested/capture.png')).toThrow(
       /filename must not contain path separators/u,
     );
+  });
+});
+
+describe('artifact entry schema', () => {
+  it('accepts recording and video artifact kinds', () => {
+    expect(
+      ArtifactEntrySchema.safeParse(
+        createArtifactEntry({
+          kind: 'recording',
+          filename: 'recording-4-asciicast.cast',
+        }),
+      ).success,
+    ).toBe(true);
+    expect(
+      ArtifactEntrySchema.safeParse(
+        createArtifactEntry({
+          kind: 'video',
+          filename: 'video-4-reference-dark.mp4',
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('accepts optional sha256 and bytes fields', () => {
+    expect(
+      ArtifactEntrySchema.safeParse(
+        createArtifactEntry({
+          sha256: 'a'.repeat(64),
+          bytes: 2048,
+        }),
+      ).success,
+    ).toBe(true);
+  });
+
+  it('rejects invalid sha256 values', () => {
+    for (const sha256 of ['abc123', 'A'.repeat(64), 'g'.repeat(64)]) {
+      const parsed = ArtifactEntrySchema.safeParse(
+        createArtifactEntry({
+          sha256,
+        }),
+      );
+
+      expect(parsed.success).toBe(false);
+    }
   });
 });
 

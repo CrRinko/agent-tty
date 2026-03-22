@@ -7,9 +7,12 @@ import { Command } from 'commander';
 import { runCreateCommand } from './commands/create.js';
 import { runDestroyCommand } from './commands/destroy.js';
 import { runDoctorCommand } from './commands/doctor.js';
+import { runGcCommand } from './commands/gc.js';
 import { runInspectCommand } from './commands/inspect.js';
 import { runListCommand } from './commands/list.js';
+import { runMarkCommand } from './commands/mark.js';
 import { runPasteCommand } from './commands/paste.js';
+import { runRecordExportCommand } from './commands/record-export.js';
 import { runResizeCommand } from './commands/resize.js';
 import { runScreenshotCommand } from './commands/screenshot.js';
 import { runSendKeysCommand } from './commands/send-keys.js';
@@ -166,6 +169,39 @@ async function main(): Promise<void> {
       ),
     );
 
+  program
+    .command('gc')
+    .description('Clean up stale or exited sessions')
+    .option('--dry-run', 'Report what would be removed without deleting', false)
+    .option(
+      '--stale-only',
+      'Only remove sessions that reconcile from active to exited',
+      false,
+    )
+    .option(
+      '--older-than <duration>',
+      'Only remove sessions older than a duration like 30m, 1h, or 7d',
+    )
+    .option('--json', 'Emit a JSON command envelope', false)
+    .action(
+      wrapAction(
+        'gc',
+        async (options: {
+          dryRun: boolean;
+          staleOnly: boolean;
+          olderThan?: string;
+          json: boolean;
+        }) => {
+          await runGcCommand({
+            json: options.json,
+            dryRun: options.dryRun,
+            staleOnly: options.staleOnly,
+            olderThan: options.olderThan,
+          });
+        },
+      ),
+    );
+
   // --- Session control ---
   program
     .command('type <session-id> <text>')
@@ -196,6 +232,27 @@ async function main(): Promise<void> {
             json: options.json,
             sessionId,
             text,
+          });
+        },
+      ),
+    );
+
+  program
+    .command('mark <session-id> <label>')
+    .description('Add a marker to a session')
+    .option('--json', 'Emit a JSON command envelope', false)
+    .action(
+      wrapAction(
+        'mark',
+        async (
+          sessionId: string,
+          label: string,
+          options: { json: boolean },
+        ) => {
+          await runMarkCommand({
+            json: options.json,
+            sessionId,
+            label,
           });
         },
       ),
@@ -308,6 +365,37 @@ async function main(): Promise<void> {
             json: options.json,
             sessionId,
             profile: options.profile,
+          });
+        },
+      ),
+    );
+
+  const recordCommand = program
+    .command('record')
+    .description('Manage recorded session artifacts');
+
+  recordCommand
+    .command('export <session-id>')
+    .description('Export a recorded session artifact')
+    .requiredOption('--format <format>', "Export format: 'asciicast' or 'webm'")
+    .option('--out <path>', 'Explicit output path')
+    .option('--json', 'Emit a JSON command envelope', false)
+    .action(
+      wrapAction(
+        'record export',
+        async (
+          sessionId: string,
+          options: {
+            format: string;
+            out?: string;
+            json: boolean;
+          },
+        ) => {
+          await runRecordExportCommand({
+            json: options.json,
+            sessionId,
+            format: options.format,
+            ...(options.out !== undefined ? { out: options.out } : {}),
           });
         },
       ),
