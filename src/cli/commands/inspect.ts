@@ -1,5 +1,6 @@
 import {
   HostInspectResultSchema,
+  type ArtifactHealthSummary,
   type InspectResult,
 } from '../../protocol/messages.js';
 import type { SessionRecord } from '../../protocol/schemas.js';
@@ -7,11 +8,13 @@ import type { SessionRecord } from '../../protocol/schemas.js';
 import { CliError } from '../errors.js';
 import type { CommandContext } from '../context.js';
 
-import { emitSuccess } from '../output.js';
 import { countEventLogEntries } from '../../host/eventLog.js';
 import { reconcileSession } from '../../host/lifecycle.js';
 import { sendRpc } from '../../host/rpcClient.js';
+import { deriveTerminationCategory } from '../../protocol/terminationCategory.js';
 import { ERROR_CODES, makeCliError } from '../../protocol/errors.js';
+import { emitSuccess } from '../output.js';
+import { computeArtifactHealth } from '../../storage/artifactHealth.js';
 import { readManifest, readManifestIfExists } from '../../storage/manifests.js';
 import {
   eventLogPath,
@@ -34,6 +37,20 @@ function computeUptime(session: SessionRecord): number {
   return Math.max(0, endAt - createdAt);
 }
 
+function formatArtifactKinds(byKind: Record<string, number>): string {
+  const kindEntries = Object.entries(byKind).sort(([leftKind], [rightKind]) =>
+    leftKind.localeCompare(rightKind),
+  );
+
+  if (kindEntries.length === 0) {
+    return 'none';
+  }
+
+  return kindEntries
+    .map(([kind, count]) => `${kind}: ${String(count)}`)
+    .join(', ');
+}
+
 function formatSessionLines(result: InspectResult): string[] {
   const { session, eventCount, uptime } = result;
   const lines = [
@@ -45,14 +62,44 @@ function formatSessionLines(result: InspectResult): string[] {
     `Created At: ${session.createdAt}`,
     `Updated At: ${session.updatedAt}`,
     `Event Count: ${String(eventCount)}`,
-    `Uptime: ${String(uptime)}ms`,
+  ];
+
+  if (result.lastEventSeq !== undefined) {
+    lines.push(`Last Event Seq: ${String(result.lastEventSeq)}`);
+  }
+
+  lines.push(`Uptime: ${String(uptime)}ms`);
+
+  if (result.artifacts !== undefined) {
+    lines.push(
+      `Artifacts: ${String(result.artifacts.total)} total (${formatArtifactKinds(result.artifacts.byKind)}), health: ${result.artifacts.health}`,
+    );
+  }
+
+  if (result.usedOfflineReplay === true) {
+    lines.push('Offline Replay: yes');
+  }
+
+  lines.push(
     `Host PID: ${String(session.hostPid ?? '-')}`,
     `Child PID: ${String(session.childPid ?? '-')}`,
     `Exit Code: ${String(session.exitCode ?? '-')}`,
     `Exit Signal: ${session.exitSignal ?? '-'}`,
-  ];
+  );
+
+  if (
+    session.status !== 'running' &&
+    session.status !== 'exiting' &&
+    result.terminationCategory !== undefined
+  ) {
+    lines.push(`Termination: ${result.terminationCategory}`);
+  }
+
   if (session.failureReason !== undefined) {
     lines.push(`Failure Reason: ${session.failureReason}`);
+  }
+  if (session.failureOrigin !== undefined) {
+    lines.push(`Failure Origin: ${session.failureOrigin}`);
   }
   return lines;
 }
@@ -64,6 +111,7 @@ export async function runInspectCommand(
   const sessionDirectory = sessionDir(home, options.sessionId);
   const manifestFile = manifestPath(sessionDirectory);
   let session = await readManifestIfExists(manifestFile);
+  let usedOfflineReplay = false;
 
   if (session === null) {
     throw makeCliError(ERROR_CODES.SESSION_NOT_FOUND, {
@@ -100,6 +148,7 @@ export async function runInspectCommand(
       ) {
         await reconcileSession(sessionDirectory);
         session = await readManifest(manifestFile);
+        usedOfflineReplay = true;
       } else {
         throw error;
       }
@@ -108,10 +157,23 @@ export async function runInspectCommand(
 
   const eventCount = await countEventLogEntries(eventLogPath(sessionDirectory));
   const uptime = computeUptime(session);
+  let artifacts: ArtifactHealthSummary | undefined;
+  try {
+    artifacts = await computeArtifactHealth(sessionDirectory);
+  } catch {
+    // Artifact health is best-effort; do not fail the entire inspect
+    // command if the artifact manifest or files are inaccessible.
+    artifacts = undefined;
+  }
+  const terminationCategory = deriveTerminationCategory(session);
   const result: InspectResult = {
     session,
     eventCount,
     uptime,
+    lastEventSeq: eventCount > 0 ? eventCount - 1 : undefined,
+    terminationCategory,
+    artifacts,
+    usedOfflineReplay,
   };
 
   emitSuccess({
