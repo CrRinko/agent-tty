@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 
 import { z } from 'zod';
 
+import { ensurePlaywrightBrowsersPath } from './browserPath.js';
+
 // --- Capability vocabulary ---
 
 export const CapabilityNameSchema = z.enum([
@@ -106,6 +108,10 @@ async function probePlaywrightAvailability(
   mode: DiscoveryMode,
 ): Promise<PlaywrightProbeResult> {
   try {
+    // Set PLAYWRIGHT_BROWSERS_PATH in process.env so downstream Playwright calls
+    // find the browser cache even when HOME has been changed for isolation.
+    ensurePlaywrightBrowsersPath();
+
     const playwrightModule = (await import('playwright')) as {
       chromium?: {
         launch?: unknown;

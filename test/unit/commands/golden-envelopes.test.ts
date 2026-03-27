@@ -12,6 +12,7 @@ import {
   DestroyResultSchema,
   InspectResultSchema,
   RecordExportResultSchema,
+  RunResultSchema,
   ScreenshotResultSchema,
   SendKeysResultSchema,
   SnapshotResultSchema,
@@ -82,6 +83,24 @@ const ListResultSchema = z
   .strict();
 
 const DoctorCheckStatusSchema = z.enum(['pass', 'fail', 'skip']);
+const EnvironmentDoctorCheckNameSchema = z.enum([
+  'node-runtime',
+  'cwd-access',
+  'temp-dir',
+  'home_isolation',
+  'home-writable',
+  'pty-spawn',
+  'socket-viable',
+  'artifact-atomicity',
+  'event-log-writable',
+]);
+const RendererDoctorCheckNameSchema = z.enum([
+  'playwright_available',
+  'browser_cache_accessible',
+  'browser_launch',
+  'ghostty_web_available',
+  'screenshot_viable',
+]);
 
 const DoctorCheckSchema = z
   .object({
@@ -92,13 +111,24 @@ const DoctorCheckSchema = z
   })
   .strict();
 
+const EnvironmentDoctorCheckSchema = DoctorCheckSchema.extend({
+  name: EnvironmentDoctorCheckNameSchema,
+});
+const RendererDoctorCheckSchema = DoctorCheckSchema.extend({
+  name: RendererDoctorCheckNameSchema,
+});
+
 const DoctorResultSchema = z
   .object({
     ok: z.boolean(),
     checks: z
       .object({
-        environment: z.array(DoctorCheckSchema),
-        renderer: z.array(DoctorCheckSchema),
+        environment: z
+          .array(EnvironmentDoctorCheckSchema)
+          .length(EnvironmentDoctorCheckNameSchema.options.length),
+        renderer: z
+          .array(RendererDoctorCheckSchema)
+          .length(RendererDoctorCheckNameSchema.options.length),
       })
       .strict(),
     capabilities: z.array(CapabilityEntrySchema),
@@ -237,10 +267,82 @@ const goldenResultContracts: readonly GoldenResultContractCase[] = [
             message: 'ok',
             durationMs: 1,
           },
+          {
+            name: 'cwd-access',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'temp-dir',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home_isolation',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'pty-spawn',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'socket-viable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'artifact-atomicity',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'event-log-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
         ],
         renderer: [
           {
             name: 'playwright_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_cache_accessible',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_launch',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'ghostty_web_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'screenshot_viable',
             status: 'pass',
             message: 'ok',
             durationMs: 2,
@@ -264,8 +366,87 @@ const goldenResultContracts: readonly GoldenResultContractCase[] = [
             message: 'ok',
             durationMs: -1,
           },
+          {
+            name: 'cwd-access',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'temp-dir',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home_isolation',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'pty-spawn',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'socket-viable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'artifact-atomicity',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'event-log-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
         ],
-        renderer: [],
+        renderer: [
+          {
+            name: 'playwright_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_cache_accessible',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_launch',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'ghostty_web_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'screenshot_viable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+        ],
       },
       capabilities: [],
     },
@@ -280,8 +461,87 @@ const goldenResultContracts: readonly GoldenResultContractCase[] = [
             durationMs: 1,
             ok: true,
           },
+          {
+            name: 'cwd-access',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'temp-dir',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home_isolation',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'home-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'pty-spawn',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'socket-viable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'artifact-atomicity',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
+          {
+            name: 'event-log-writable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 1,
+          },
         ],
-        renderer: [],
+        renderer: [
+          {
+            name: 'playwright_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_cache_accessible',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'browser_launch',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'ghostty_web_available',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+          {
+            name: 'screenshot_viable',
+            status: 'pass',
+            message: 'ok',
+            durationMs: 2,
+          },
+        ],
       },
       capabilities: [],
     },
@@ -341,6 +601,32 @@ const goldenResultContracts: readonly GoldenResultContractCase[] = [
       dryRun: true,
       totalBytesFreed: 0,
       wouldRemoveSessions: [],
+    },
+  },
+  {
+    name: 'run',
+    command: 'run',
+    schema: RunResultSchema,
+    validResult: {
+      accepted: true,
+      completed: true,
+      timedOut: false,
+      seq: 42,
+      durationMs: 1500,
+      marker: '__AT_MARKER_abc123__',
+    },
+    invalidResult: {
+      accepted: false,
+      seq: -1,
+    },
+    extraFieldResult: {
+      accepted: true,
+      completed: true,
+      timedOut: false,
+      seq: 42,
+      durationMs: 1500,
+      marker: '__AT_MARKER_abc123__',
+      exitCode: 0,
     },
   },
   {

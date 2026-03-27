@@ -9,6 +9,7 @@ import {
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 
+import { ensurePlaywrightBrowsersPath } from '../browserPath.js';
 import {
   chromium,
   type Browser,
@@ -1462,6 +1463,7 @@ export class GhosttyWebBackend implements VideoCapableRendererBackend {
         case 'input_text':
         case 'input_paste':
         case 'input_keys':
+        case 'input_run':
         case 'signal':
         case 'exit': {
           await flushOutputBatch();
@@ -1719,6 +1721,7 @@ export class GhosttyWebBackend implements VideoCapableRendererBackend {
         case 'input_text':
         case 'input_paste':
         case 'input_keys':
+        case 'input_run':
         case 'signal':
         case 'exit': {
           await flushOutputBatch();
@@ -1979,6 +1982,20 @@ export class GhosttyWebBackend implements VideoCapableRendererBackend {
       const { origin, server } = await this.startServer(servedAssets);
       this.server = server;
       this.serverOrigin = origin;
+
+      // Set PLAYWRIGHT_BROWSERS_PATH in process.env so downstream Playwright calls
+      // find the browser cache even when HOME has been changed for isolation.
+      const browserPathResolution = ensurePlaywrightBrowsersPath();
+      if (browserPathResolution === null) {
+        this.logger.debug(
+          'No Playwright browser cache override resolved; using Playwright defaults',
+        );
+      } else {
+        this.logger.debug(
+          'Resolved Playwright browser cache path',
+          browserPathResolution,
+        );
+      }
 
       this.browser = await chromium.launch({
         headless: true,
