@@ -1,0 +1,19 @@
+Safety-rule parity fixture evidence
+Generated: 2026-04-29
+Fixture: test/oxlint-parity.fixture.ts (temporary, removed after this run)
+ESLint status: 1
+Oxlint status: 1
+
+ESLint rules:
+  @typescript-eslint/consistent-type-imports@1
+  @typescript-eslint/require-await@17
+  @typescript-eslint/no-floating-promises@18
+  @typescript-eslint/no-unsafe-assignment@19
+  @typescript-eslint/no-confusing-void-expression@20
+
+Oxlint rules:
+  typescript-eslint(consistent-type-imports)@1
+  typescript-eslint(no-floating-promises)@18
+  typescript-eslint(no-unsafe-assignment)@19
+  typescript-eslint(no-confusing-void-expression)@20
+  typescript-eslint(require-await)@17
