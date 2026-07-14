@@ -16,8 +16,9 @@ import {
 } from '../util/abort.js';
 import { invariant } from '../util/assert.js';
 import { ResourceScope } from '../util/resourceScope.js';
+import { isWindowsPipeSocket } from '../storage/sessionPaths.js';
 
-const MAX_UNIX_SOCKET_PATH = 104;
+const MAX_UNIX_SOCKET_PATH = process.platform === 'win32' ? Infinity : 104;
 const MAX_RPC_BUFFER_BYTES = 1_048_576;
 
 const SOCKET_LIVENESS_PROBE_TIMEOUT_MS = 1_000;
@@ -190,15 +191,17 @@ export class RpcServer {
   public async listen(): Promise<void> {
     invariant(this.server === null, 'RPC server is already listening.');
 
-    await this.removeStaleSocketIfNeeded();
-    invariant(
-      this.socketPath.length <= MAX_UNIX_SOCKET_PATH,
-      `Socket path exceeds Unix domain socket limit of ${String(MAX_UNIX_SOCKET_PATH)} bytes: ${this.socketPath} (${String(this.socketPath.length)} bytes)`,
-    );
-    invariant(
-      !(await socketPathExists(this.socketPath)),
-      `RPC socket path must not exist before listen(): ${this.socketPath}`,
-    );
+    if (!isWindowsPipeSocket(this.socketPath)) {
+      await this.removeStaleSocketIfNeeded();
+      invariant(
+        this.socketPath.length <= MAX_UNIX_SOCKET_PATH,
+        `Socket path exceeds Unix domain socket limit of ${String(MAX_UNIX_SOCKET_PATH)} bytes: ${this.socketPath} (${String(this.socketPath.length)} bytes)`,
+      );
+      invariant(
+        !(await socketPathExists(this.socketPath)),
+        `RPC socket path must not exist before listen(): ${this.socketPath}`,
+      );
+    }
 
     const server = net.createServer((socket) => {
       this.handleConnection(socket);
@@ -227,7 +230,9 @@ export class RpcServer {
       throw error;
     }
 
-    await chmod(this.socketPath, 0o600);
+    if (!isWindowsPipeSocket(this.socketPath)) {
+      await chmod(this.socketPath, 0o600);
+    }
   }
 
   public async close(): Promise<void> {
@@ -240,7 +245,9 @@ export class RpcServer {
     this.server = null;
 
     if (server === null) {
-      await unlinkIfPresent(this.socketPath);
+      if (!isWindowsPipeSocket(this.socketPath)) {
+        await unlinkIfPresent(this.socketPath);
+      }
       return;
     }
 
@@ -256,7 +263,9 @@ export class RpcServer {
         });
       });
 
-      await unlinkIfPresent(this.socketPath);
+      if (!isWindowsPipeSocket(this.socketPath)) {
+        await unlinkIfPresent(this.socketPath);
+      }
     })();
 
     try {

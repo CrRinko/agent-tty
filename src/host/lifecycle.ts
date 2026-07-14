@@ -21,6 +21,7 @@ import {
   writeManifest,
 } from '../storage/manifests.js';
 import {
+  isWindowsPipeSocket,
   manifestPath,
   sessionDir,
   socketPath,
@@ -318,7 +319,9 @@ async function waitForProcessAndSocketShutdown(
     throwIfAborted(signal);
     const hostAlive = isProcessAlive(hostPid);
     const childAlive = isProcessAlive(childPid);
-    const socketPresent = await pathExists(socketFile);
+    const socketPresent = isWindowsPipeSocket(socketFile)
+      ? false
+      : await pathExists(socketFile);
 
     if (!hostAlive && !childAlive && !socketPresent) {
       return true;
@@ -519,7 +522,9 @@ export async function destroySession(
     };
 
     await writeManifest(manifestFile, destroyedManifest);
-    await unlinkIfPresent(socketFile);
+    if (!isWindowsPipeSocket(socketFile)) {
+      await unlinkIfPresent(socketFile);
+    }
     return;
   }
 
@@ -726,5 +731,8 @@ export async function reconcileSession(
   };
 
   await writeManifest(manifestFile, reconciledManifest);
-  await unlinkIfPresent(socketPath(sessionDirectory));
+  const sPath = socketPath(sessionDirectory);
+  if (!isWindowsPipeSocket(sPath)) {
+    await unlinkIfPresent(sPath);
+  }
 }

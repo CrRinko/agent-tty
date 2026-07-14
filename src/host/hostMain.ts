@@ -52,6 +52,7 @@ import { resolveHome } from '../storage/home.js';
 import { readManifest, writeManifest } from '../storage/manifests.js';
 import {
   eventLogPath,
+  isWindowsPipeSocket,
   manifestPath,
   sessionDir,
   socketPath,
@@ -1101,8 +1102,10 @@ export async function runHost(sessionId: string): Promise<void> {
   try {
     await writeManifest(mPath, state.snapshot());
     const socketDirectory = dirname(sPath);
-    await mkdir(socketDirectory, { recursive: true });
-    await chmod(socketDirectory, 0o700);
+    if (!isWindowsPipeSocket(sPath)) {
+      await mkdir(socketDirectory, { recursive: true });
+      await chmod(socketDirectory, 0o700);
+    }
 
     if (!isSessionCommandable(state)) {
       await initiateShutdown();
