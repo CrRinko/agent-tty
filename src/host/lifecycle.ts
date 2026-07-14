@@ -474,6 +474,7 @@ export function launchHost(config: LaunchHostConfig): number {
     {
       detached: true,
       stdio: 'ignore',
+      windowsHide: true,
       env: {
         ...process.env,
         ...config.env,
